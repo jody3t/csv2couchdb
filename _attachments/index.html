@@ -160,12 +160,13 @@
 					<div class="divTitle">Output settings</div>
 					<fieldset>
 						<legend>Documents settings</legend>
-						<input type="radio" name="outputFormat" value="byFile" id="byFile" checked="checked"/>
+						<input type="radio" name="outputFormat" value="byFile" id="byFile"/>
 						<label for="byFile">one document per flat file</label>
-						<input type="radio" name="outputFormat" value="byRow" id="byRow"/>
+						<input type="radio" name="outputFormat" value="byRow" id="byRow" checked="checked"/>
 						<label for="byRow">one document per row</label><br/>
 						<label for="ids">Generate _ids from</label>
 						<select name="ids" id="ids">
+							<option default value="idField">id field</option>
 							<option value="custom">file name</option>
 							<option value="auto">couchdb random uuid</option>
 						</select>

@@ -24,7 +24,11 @@ Consists in 5 steps:
 	var currentStep = 1;
 
 	var $db = '';
-
+  var maxBatchSize = 10000,
+      batchIndex = -1, 
+      batchSize = -1,
+      totalSuccessCount = 0;
+  
 	function errorHandler(evt) {
 	// handle errors occuring when reading file
 		switch(evt.target.error.code) {
@@ -470,7 +474,17 @@ Consists in 5 steps:
 				// convert the file content into a javascript array of JSON objects
 				JSONdoc = $.csvIn.toJSON(filesData[fileIndex].data, fileOptions);
 
-				if (ids == 'custom') {
+				if (ids == 'idField') {
+				// use the id field
+					for (i in JSONdoc) {
+					// go through each row, generate id and add document
+						JSONdoc[i]._id = JSONdoc[i].id;
+						delete JSONdoc[i].id;
+						JSONdoc[i].type = filesData[fileIndex].name.replace(".txt","");
+						result.push(JSONdoc[i]);
+					}
+				}
+				else if (ids == 'custom') {
 				// process with generation of custom _id : file name and row number
 					for (i in JSONdoc) {
 					// go through each row, generate id and add document
@@ -510,6 +524,15 @@ Consists in 5 steps:
 	}
 
 	function pushToDB(docs) {
+    maxBatchSize = 10000,
+    batchIndex = -1, 
+    batchSize = -1,
+    totalSuccessCount = 0;
+    
+    pushMoreToDB(docs);
+  }
+  
+  function pushMoreToDB(docs) {
 	// insert documents into couchdb
 
 		// get output settings
@@ -522,7 +545,21 @@ Consists in 5 steps:
 
 		var url = window.location.protocol + "//" + window.location.host + "/" + dbName + "/_bulk_docs";
 
-		bulkLoader.postMessage({"docs":docs, "url":url });
+    if (batchIndex + batchSize < docs.length) {
+      // more batches to save
+      if (batchIndex == -1)
+        batchIndex = 0;
+      else
+        batchIndex = batchIndex + batchSize;
+      batchSize = Math.min (maxBatchSize, docs.length - batchIndex);
+    }
+    
+    var batch = [];
+    for (var i = batchIndex; i < batchIndex + batchSize; i++) {
+      batch.push(docs[i]);
+    }
+    
+		bulkLoader.postMessage({"docs":batch, "url":url });
 
 		bulkLoader.onmessage = function (event) {
 		// react according to result of processing
@@ -533,30 +570,9 @@ Consists in 5 steps:
 			if(result.success) {
 			// confirm that insertion was succcessfully done
 
-				$('#bulkLoadSpinner').hide();
-
-				$('#successDocs, #postProcessing').fadeIn();
-
+        $('#successDocs').fadeIn();
+        
 				$db = $.couch.db(dbName);
-
-				// check presence of recline design document in the database
-				$db.allDocs({
-					keys: ['_design/recline'],
-					success: function(data) {
-						if(!data.rows[0].error) {
-						// insert link to recline in case recline design document exists in the target DB
-							$('<div id="recline"><div><img src="images/recline-logo.png" alt="go to recline"/></div><div><h3>Continue to recline</h3><p>Process the documents in recline</p></div></div>').insertAfter('#moreFiles');
-							// bind click event listener
-							$('#recline').live('click',function() {
-							// go to recline
-								reclineUrl = '../../../' + $('#dbName').val() + '/_design/recline/_rewrite';
-								window.location.href = reclineUrl;
-							});
-
-
-						}
-					}
-				});
 
 				var successCount = 0;
 				for (i in result.response) {
@@ -564,6 +580,7 @@ Consists in 5 steps:
 					// show confirmation for successful document insert
 						// show list of inserted files by Id
 							successCount++;
+							totalSuccessCount++;
 					}
 					else if (result.response[i].error == 'conflict') {
 					// show conflict documents and provide overwrite option
@@ -648,13 +665,40 @@ Consists in 5 steps:
 					}
 				}
 				if (successCount > 1)
-					$('#successDocs').find('p').html(successCount + ' new documents were successfully inserted<br/>');
+					$('#successDocs').find('p').html(totalSuccessCount + ' of ' + docs.length + ' new documents successfully inserted<br/>');
 				else if (successCount == 1)
 					$('#successDocs').find('p').html('1 new document was successfully inserted');
 				else
 				// successCount == 0
 					$('#successDocs').find('p').html('No new document was inserted');
-			
+        if (batchIndex + batchSize < docs.length) {
+          // got some more to push
+          pushMoreToDB(docs);
+        }
+        else {
+          $('#bulkLoadSpinner').hide();
+
+          $('#postProcessing').fadeIn();
+
+          // check presence of recline design document in the database
+          $db.allDocs({
+            keys: ['_design/recline'],
+            success: function(data) {
+              if(!data.rows[0].error) {
+              // insert link to recline in case recline design document exists in the target DB
+                $('<div id="recline"><div><img src="images/recline-logo.png" alt="go to recline"/></div><div><h3>Continue to recline</h3><p>Process the documents in recline</p></div></div>').insertAfter('#moreFiles');
+                // bind click event listener
+                $('#recline').live('click',function() {
+                // go to recline
+                  reclineUrl = '../../../' + $('#dbName').val() + '/_design/recline/_rewrite';
+                  window.location.href = reclineUrl;
+                });
+
+
+              }
+            }
+          });        
+        }
 			}
 			else {
 			// throw appropriate error message
@@ -664,7 +708,7 @@ Consists in 5 steps:
 				console.log(result.response.errorThrown);
 			}
 		}
-	}
+	} // end pushMoreToDB (docs)
 
     $(document).ready(function() {
 
