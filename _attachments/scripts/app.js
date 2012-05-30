@@ -17,7 +17,7 @@ Consists in 5 steps:
 5) (if applicable) get feedback about overwrites / retries
 */
 
-	// fileData contains data from read files
+// fileData contains data from read files
 	var filesData = [];
 
 	// currentStepkeeps track of steps
@@ -68,16 +68,20 @@ Consists in 5 steps:
 		// files is a FileList of File objects. List some properties.
 		var output = [];
 		
-		var counter=0;
+		var fileNameMap = {}; 
 
-		for (var i = 0, f; f = files[i]; i++) {
+		for (var i = 0; i < files.length; i++) {
 			// 1. show input and processing options for each file
-
+			
+			var f = files[i];
+			
 			var $fileDiv = $('#step2 .template')
 				.clone()
 				.removeClass('template')
 				.attr('id','file'+i)
 
+			fileNameMap[f.name] = {index : i, file : f};
+			
 			// set ids for the elements of the div (necessary to have labels clickable)
 			$fileDiv.find('input').each(function() {
 				$(this).attr('id', $(this).attr('id')+i);
@@ -96,7 +100,7 @@ Consists in 5 steps:
 			var reader = new FileReader();
 			// Closure to capture the file information.
 
-			progress = $('#bar'+counter);
+			progress = $('#bar'+i);
 
 			// Initialize progress indicator on new file selection.
 			progress.find('.percent').width('0%');
@@ -106,15 +110,16 @@ Consists in 5 steps:
 			
 			reader.onprogress = function(e) {
 			// handle progress of the file read
-				updateProgress(e,counter);
+				updateProgress(e,i);
 			}
 
 			// onload event necessary so that processing starts only once the file is read
-			reader.onload = (function(theFile) {
-				return function(e) {
+			reader.onload = (function(theFile, theFileNameMap) {
+        return (function(event) {
 				// Send file data to csv processor.
 
-				var $input = $('#file'+counter);
+				var fileNumber = theFileNameMap[theFile.name].index;
+				var $input = $('#file'+fileNumber);
 				
 				// display a spinner during the file update
 				$input.find('div.filePreview > div:nth-child(2)').html('<img src="images/spinner.gif" alt="loading..."/> Parsing CSV data...');
@@ -123,18 +128,15 @@ Consists in 5 steps:
 				$input.find('div.filePreview > div:nth-child(1)').text('Preview of 5 first rows');
 
 				// add data to the global variable storing all files
-				filesData.push({"name": theFile.name, "index":counter, "data": e.target.result});
+				filesData[fileNumber] = {"name": theFile.name, "index":fileNumber, "data": event.target.result};
 								
 				// process the current file
 				processCsv($input, {});
-
-				counter++;
-				};
-			})(f);
+        });
+			})(f, fileNameMap);
 
 			// Read in the image file as a data URL.
 			reader.readAsText(f);
-
 		}
 
 		currentStep++;
@@ -207,7 +209,7 @@ Consists in 5 steps:
 		if (!fileOpts)
 			fileOpts = {};
 		// retrieving index of the file
-		var fileIndex = $fileDiv.attr('id').substr(4,1);
+		var fileIndex = $fileDiv.attr('id').substr(4);
 		var file = filesData[fileIndex];
 
 		// detect column delimitor from a standard list at first run
@@ -245,7 +247,7 @@ Consists in 5 steps:
 			fileOpts.headerCheck = $.csvIn.isHeader(currentCsvArray[0]);
 
 		// setting file name
-		$fileDiv.find('.divTitle').eq(0).text(file.name);
+		$fileDiv.find('.divTitle.fileName').eq(0).text(file.name);
 
 		for (i in fileOpts.delimitors) {
 		// check checkbox for selected delimitors		
@@ -451,7 +453,7 @@ Consists in 5 steps:
 		
 			$input = $(this);
 			
-			var fileIndex = $input.attr('id').substr(4,1);
+			var fileIndex = $input.attr('id').substr(4);
 			
 			// retrieving file options
 			var fileOptions = getFileOptions ($input);
@@ -475,12 +477,14 @@ Consists in 5 steps:
 				JSONdoc = $.csvIn.toJSON(filesData[fileIndex].data, fileOptions);
 
 				if (ids == 'idField') {
-				// use the id field
+				// use the id field if it exists, else use random id
 					for (i in JSONdoc) {
-					// go through each row, generate id and add document
-						JSONdoc[i]._id = JSONdoc[i].id;
-						delete JSONdoc[i].id;
-						JSONdoc[i].type = filesData[fileIndex].name.replace(".txt","");
+					// go through each row, set id and add document
+						if (JSONdoc[i].id) {
+							JSONdoc[i]._id = JSONdoc[i].id;
+							delete JSONdoc[i].id;
+						}
+            JSONdoc[i].type = filesData[fileIndex].name.replace(".txt","");
 						result.push(JSONdoc[i]);
 					}
 				}
@@ -489,6 +493,7 @@ Consists in 5 steps:
 					for (i in JSONdoc) {
 					// go through each row, generate id and add document
 						JSONdoc[i]._id = filesData[fileIndex].name+ (parseInt(i)+1);
+            JSONdoc[i].type = filesData[fileIndex].name.replace(".txt","");
 						result.push(JSONdoc[i]);
 					}
 				}
@@ -496,6 +501,7 @@ Consists in 5 steps:
 				// add document without generating id
 					for (i in JSONdoc) {
 					// go through each row to add document
+            JSONdoc[i].type = filesData[fileIndex].name.replace(".txt","");
 						result.push(JSONdoc[i]);
 					}
 				}
@@ -508,7 +514,8 @@ Consists in 5 steps:
 
 				// convert the file content into a javascript array
 				JSONdoc.rows = $.csvIn.toArray(filesData[fileIndex].data, fileOptions);
-				
+				JSONdoc.type = filesData[fileIndex].name.replace(".txt","");
+
 				if (ids == 'custom')
 				// generate custom _id : file name
 						JSONdoc._id = filesData[fileIndex].name;
@@ -829,7 +836,7 @@ Consists in 5 steps:
 		$('[type="checkbox"][name="columnSelector"]').live('click', function() {
 		// toggle selected column display
 			var $input = $(this);
-			var fileIndex = $input.parents().filter('div')[2].id.substr(4,1);
+			var fileIndex = $input.parents().filter('div')[2].id.substr(4);
 			var columnIndex = $input.parent()[0].cellIndex+1;
 
 			columnSelection($input.parents('table'), [columnIndex]);
@@ -843,7 +850,7 @@ Consists in 5 steps:
 			var $input = $(this).parents().filter('div').eq(1);
 
 			// store file index
-			var fileIndex = $input.attr('id').substr(4,1);
+			var fileIndex = $input.attr('id').substr(4);
 
 			if (this.value=="custom" && $(this).prop("checked") == false) {
 			// empty custom delimitor text input in case user unticks custom checkbox
@@ -876,7 +883,7 @@ Consists in 5 steps:
 			var opts = getFileOptions($input);
 
 			// store file index
-//			var fileIndex = $input.attr('id').substr(4,1);
+//			var fileIndex = $input.attr('id').substr(4);
 			
 			processCsv($input, opts);
 			
